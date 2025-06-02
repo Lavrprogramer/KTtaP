@@ -24,8 +24,9 @@ func Router(cont container.Container) http.Handler {
 	router := chi.NewRouter()
 
 	router.Use(middleware.RedirectSlashes, middleware.Logger, cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://*", "http://*", "capacitor://localhost"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedOrigins: []string{"https://*", "http://*", "capacitor://localhost"},
+		// додан PATCH
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
@@ -126,6 +127,11 @@ func TaskRouter(r chi.Router, tc controllers.TaskController, ts app.TaskService)
 		apiRouter.With(tpom).Delete(
 			"/{taskId}",
 			tc.Delete(),
+		)
+		// новий маршрут для оновлення статусу
+		apiRouter.With(tpom).Patch(
+			"/{taskId}/status",
+			tc.UpdateStatus(),
 		)
 	})
 }

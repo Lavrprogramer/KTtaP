@@ -24,9 +24,12 @@ type task struct {
 type TaskRepository interface {
 	Save(t domain.Task) (domain.Task, error)
 	Find(id uint64) (domain.Task, error)
-	FindAllTasks(uId uint64) ([]domain.Task, error)
+	// Змінений FindAllTasks
+	FindAllTasks(uId uint64, status *domain.TaskStatus, date *time.Time) ([]domain.Task, error)
 	Update(t domain.Task) (domain.Task, error)
 	Delete(id uint64) error
+	// UpdateStatus
+	UpdateStatus(taskId uint64, status domain.TaskStatus) error
 }
 
 type taskRepository struct {
@@ -43,6 +46,11 @@ func NewTaskRepository(sess db.Session) TaskRepository {
 
 func (r taskRepository) Save(t domain.Task) (domain.Task, error) {
 	tsk := r.mapDomainToModel(t)
+	// Встановлення CreatedDate та UpdatedDate при створенні
+	if tsk.CreatedDate.IsZero() {
+		tsk.CreatedDate = time.Now()
+	}
+	tsk.UpdatedDate = time.Now()
 
 	err := r.coll.InsertReturning(&tsk)
 	if err != nil {
@@ -67,17 +75,33 @@ func (r taskRepository) Find(id uint64) (domain.Task, error) {
 	return r.mapModelToDomain(t), nil
 }
 
-func (r taskRepository) FindAllTasks(uId uint64) ([]domain.Task, error) {
+// відредагован FindAllTasks
+func (r taskRepository) FindAllTasks(uId uint64, status *domain.TaskStatus, date *time.Time) ([]domain.Task, error) {
 	var ts []task
 
-	err := r.coll.Find(db.Cond{
+	conditions := db.Cond{
 		"user_id":      uId,
 		"deleted_date": nil,
-	}).All(&ts)
+	}
+
+	// умови для фільтрації по статусу
+	if status != nil && *status != "" {
+		conditions["status"] = *status
+	}
+
+	// умови для фільтрації по даті
+	if date != nil {
+		startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+		endOfDay := startOfDay.Add(24 * time.Hour).Add(-time.Nanosecond) // Кінець дня (23:59:59.999...)
+		conditions["date >="] = startOfDay
+		conditions["date <="] = endOfDay
+	}
+
+	// сортування за датою
+	err := r.coll.Find(conditions).OrderBy("-created_date").All(&ts)
 	if err != nil {
 		return nil, err
 	}
-
 	return r.mapModelToDomainCollection(ts), nil
 }
 
@@ -93,6 +117,14 @@ func (r taskRepository) Update(t domain.Task) (domain.Task, error) {
 
 func (r taskRepository) Delete(id uint64) error {
 	return r.coll.Find(db.Cond{"id": id, "deleted_date": nil}).Update(map[string]interface{}{"deleted_date": time.Now()})
+}
+
+// UpdateStatus
+func (r taskRepository) UpdateStatus(taskId uint64, status domain.TaskStatus) error {
+	return r.coll.Find(db.Cond{"id": taskId, "deleted_date": nil}).Update(map[string]interface{}{
+		"status":       status,
+		"updated_date": time.Now(),
+	})
 }
 
 func (r taskRepository) mapDomainToModel(t domain.Task) task {

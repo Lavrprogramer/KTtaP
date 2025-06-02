@@ -2,11 +2,13 @@ package middlewares
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 
+	"github.com/BohdanBoriak/boilerplate-go-back/internal/domain" // Додано для domain.User та domain.Task
 	"github.com/BohdanBoriak/boilerplate-go-back/internal/infra/http/controllers"
 	"github.com/go-chi/chi/v5"
 	"github.com/upper/db/v4"
@@ -40,8 +42,30 @@ func PathObject(pathKey string, ctxKey controllers.CtxKey, service Findable) fun
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), ctxKey, obj)
+			// перевірка власника таску
+			if ctxKey == controllers.TaskKey {
+				task, okTask := obj.(domain.Task)
+				user, okUser := r.Context().Value(controllers.UserKey).(domain.User)
 
+				if !okTask {
+					log.Print("PathObjectMiddleware")
+					controllers.InternalServerError(w, errors.New("server error"))
+					return
+				}
+				if !okUser {
+					log.Print("PathObjectMiddleware")
+					controllers.Unauthorized(w, errors.New("user not found"))
+					return
+				}
+
+				// чи однакові ID користувача в таску співпадає з ID поточного користувача
+				if task.UserId != user.Id {
+					controllers.Forbidden(w, errors.New("access denied"))
+					return
+				}
+			}
+
+			ctx := context.WithValue(r.Context(), ctxKey, obj)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		}
 		return http.HandlerFunc(hfn)
